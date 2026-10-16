@@ -481,6 +481,17 @@ export function Forms({ request, onClose }: { request: FormRequest; onClose: () 
     ]
   }
   initial = { ...initial, ...request.initial }
+  if (
+    kind === 'project' &&
+    String(initial.description).includes('[JARVIS_PLANIFICACION_PENDIENTE]')
+  ) {
+    initial.description = String(initial.description).replace(
+      '[JARVIS_PLANIFICACION_PENDIENTE]\n',
+      '',
+    )
+    initial.start_date = ''
+    initial.end_date = ''
+  }
   async function attachments(v: Values, scope: { company_id?: string; post_id?: string }) {
     for (const file of (v.files || []) as File[]) {
       const key = `${file.name}-${file.size}-${file.lastModified}`

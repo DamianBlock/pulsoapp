@@ -37,6 +37,11 @@ import { Finances } from './Finances'
 import { MeetingList } from './Agenda'
 import { labels, type Project, type Task } from '../lib/types'
 
+const pendingPlan = (description: string) =>
+  description.includes('[JARVIS_PLANIFICACION_PENDIENTE]')
+const projectDescription = (description: string) =>
+  description.replace('[JARVIS_PLANIFICACION_PENDIENTE]\n', '')
+
 export function ProjectCard({ project: p }: { project: Project }) {
   const { data } = useStore(),
     c = data.companies.find((c) => c.id === p.company_id),
@@ -49,7 +54,7 @@ export function ProjectCard({ project: p }: { project: Project }) {
       </div>
       <span className="eyebrow">{c?.name}</span>
       <h3>{p.name}</h3>
-      <p>{p.description || 'Listo para empezar a trabajar.'}</p>
+      <p>{projectDescription(p.description) || 'Listo para empezar a trabajar.'}</p>
       <Progress value={progress(data.tasks.filter((t) => t.project_id === p.id))} />
       <footer>
         <div className="person-inline">
@@ -58,7 +63,7 @@ export function ProjectCard({ project: p }: { project: Project }) {
         </div>
         <span>
           <CalendarDays size={14} />
-          {dateLabel(p.end_date, 'd MMM')}
+          {pendingPlan(p.description) ? 'Fecha por definir' : dateLabel(p.end_date, 'd MMM')}
         </span>
       </footer>
       <small className="meta">
@@ -523,7 +528,7 @@ export function Detail({ type, open }: { type: 'company' | 'project'; open: Open
                 {project && <Badge status={project.status} />}
               </div>
               <p className="preserve-lines">
-                {project?.description ||
+                {(project && projectDescription(project.description)) ||
                   company.notes ||
                   'Todavía no hay notas. Podés agregarlas desde Editar.'}
               </p>
@@ -532,14 +537,20 @@ export function Detail({ type, open }: { type: 'company' | 'project'; open: Open
                   <Progress value={progress(tasks)} />
                   <div className="info-grid">
                     <div>
-                      <span>Responsable</span>
+                      <span>
+                        {pendingPlan(project.description) ? 'Responsable inicial' : 'Responsable'}
+                      </span>
                       <strong>
                         {data.profiles.find((p) => p.id === project.owner_id)?.display_name}
                       </strong>
                     </div>
                     <div>
                       <span>Entrega</span>
-                      <strong>{dateLabel(project.end_date)}</strong>
+                      <strong>
+                        {pendingPlan(project.description)
+                          ? 'Por definir'
+                          : dateLabel(project.end_date)}
+                      </strong>
                     </div>
                     <div>
                       <span>Presupuesto</span>
