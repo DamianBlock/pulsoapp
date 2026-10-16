@@ -32,6 +32,12 @@ import {
 import { useStore } from '../lib/store'
 import { dateLabel, normalize, messageOf } from '../lib/utils'
 import { layoutMeetings, meetingWhatsapp } from '../lib/agenda'
+import {
+  pendingMeeting,
+  pendingLabels,
+  visibleMeetingNotes,
+  meetingTime,
+} from '../lib/meetingCapture'
 import type { Meeting } from '../lib/types'
 import { Avatar, Badge, Empty, PageTitle, Modal, Dictation, External } from '../components/UI'
 import type { OpenForm } from './Feed'
@@ -42,7 +48,12 @@ export function meetingEdit(m: Meeting) {
     company_id: m.company_id || 'internal',
     date: format(new Date(m.starts_at), 'yyyy-MM-dd'),
     time: format(new Date(m.starts_at), 'HH:mm'),
-    duration: String(differenceInMinutes(new Date(m.ends_at), new Date(m.starts_at))),
+    duration: pendingMeeting(m.notes).includes('duration')
+      ? ''
+      : String(differenceInMinutes(new Date(m.ends_at), new Date(m.starts_at))),
+    location_type: pendingMeeting(m.notes).includes('location_type') ? '' : m.location_type,
+    capture_pending: pendingMeeting(m.notes).join(','),
+    notes: visibleMeetingNotes(m.notes),
     reminder_minutes: String(m.reminder_minutes),
   }
 }
@@ -70,12 +81,18 @@ export function MeetingList({ meetings, open }: { meetings: Meeting[]; open: Ope
                 <strong>{m.title}</strong>
                 <Badge status={m.status} />
               </div>
-              <span>{c?.name || 'Equipo PULSO'}</span>
+              <span>
+                {c?.name ||
+                  (pendingMeeting(m.notes).includes('company')
+                    ? 'Empresa por definir'
+                    : 'Equipo PULSO')}
+              </span>
               <div className="meta">
                 <Clock size={14} />
-                {dateLabel(m.starts_at, 'HH:mm')} – {dateLabel(m.ends_at, 'HH:mm')}{' '}
-                <Icon size={14} />
-                {m.location_type}
+                {meetingTime(m, (d) => dateLabel(d, 'HH:mm'))} <Icon size={14} />
+                {pendingMeeting(m.notes).includes('location_type')
+                  ? 'Modalidad por definir'
+                  : m.location_type}
                 {m.series_id && <Repeat size={14} />}
               </div>
             </div>
@@ -140,7 +157,12 @@ export function MeetingDetail({
         <div className="detail-meeting-head">
           <Avatar name={c?.name || 'PULSO'} path={c?.logo_path} size={52} square />
           <div>
-            <span className="eyebrow">{c?.name || 'EQUIPO PULSO'}</span>
+            <span className="eyebrow">
+              {c?.name ||
+                (pendingMeeting(m.notes).includes('company')
+                  ? 'Empresa por definir'
+                  : 'EQUIPO PULSO')}
+            </span>
             <h2>{m.title}</h2>
           </div>
         </div>
@@ -151,11 +173,20 @@ export function MeetingDetail({
           </span>
           <span>
             <Clock size={17} />
-            {dateLabel(m.starts_at, 'HH:mm')} – {dateLabel(m.ends_at, 'HH:mm')}
+            {meetingTime(m, (d) => dateLabel(d, 'HH:mm'))}
           </span>
           <Badge status={m.status} />
         </div>
         <div className="person-list">
+          {!!pendingMeeting(m.notes).length && (
+            <p className="field-hint">
+              Por completar:{' '}
+              {pendingMeeting(m.notes)
+                .map((k) => pendingLabels[k] ?? k)
+                .join(', ')}
+              . Cualquier integrante puede completar esta reunión con el botón Editar.
+            </p>
+          )}
           {m.attendees.map((id) => {
             const p = data.profiles.find((p) => p.id === id)
             return (
@@ -177,7 +208,9 @@ export function MeetingDetail({
           </Link>
         )}
         <div className="link-row">
-          {m.location_type === 'virtual' ? (
+          {pendingMeeting(m.notes).includes('location_type') ? (
+            <span>Modalidad por definir</span>
+          ) : m.location_type === 'virtual' ? (
             <External href={m.location}>
               <Video size={17} />
               Entrar a la reunión
@@ -234,7 +267,7 @@ export function MeetingDetail({
         </section>
         <div className="meeting-section">
           <h3>Temas para conversar</h3>
-          <p className="preserve-lines">{m.notes || 'Sin temas cargados.'}</p>
+          <p className="preserve-lines">{visibleMeetingNotes(m.notes) || 'Sin temas cargados.'}</p>
         </div>
         {previous && (
           <details className="meeting-section">

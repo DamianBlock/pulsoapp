@@ -8,6 +8,7 @@ import { supabase, upload } from '../lib/supabase'
 import { balance, conflicts, normalize, today } from '../lib/utils'
 import { labels } from '../lib/types'
 import { taskText } from '../lib/tasks'
+import { completedCapture, pendingMeeting } from '../lib/meetingCapture'
 export type FormKind =
   | 'company'
   | 'project'
@@ -587,20 +588,32 @@ export function Forms({ request, onClose }: { request: FormRequest; onClose: () 
         base.company_id = createdCompany.current
       }
       const start = new Date(`${v.date}T${v.time}`)
+      const capturedNotes = completedCapture(
+        (v.capture_pending ? `[JARVIS_PENDIENTE:${v.capture_pending}]\n` : '') + (v.notes || ''),
+        {
+          duration: v.duration,
+          attendees: v.attendees || [],
+          guests: v.guests || '',
+          location_type: v.location_type,
+          location: v.location || '',
+        },
+      )
       const series = request.id ? null : v.recurrence !== 'none' ? crypto.randomUUID() : null
       const count = series ? Number(v.occurrences) : 1
       const rows = Array.from({ length: count }, (_, i) => {
         const when = v.recurrence === 'monthly' ? addMonths(start, i) : addWeeks(start, i)
         return {
           ...base,
-          title: v.title,
+          title: pendingMeeting(capturedNotes).length
+            ? v.title
+            : v.title.replace(/ · Por completar$/, ''),
           starts_at: when.toISOString(),
           ends_at: new Date(when.getTime() + Number(v.duration) * 60000).toISOString(),
           attendees: v.attendees || [],
           guests: v.guests || '',
           location_type: v.location_type,
           location: v.location || '',
-          notes: v.notes || '',
+          notes: capturedNotes,
           reminder_minutes: Number(v.reminder_minutes),
           ...(!request.id ? { series_id: series, ...creator } : {}),
         }

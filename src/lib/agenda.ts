@@ -1,6 +1,7 @@
 import type { Meeting, Data } from './types'
 import { addDays, format, endOfDay } from 'date-fns'
 import { balance, dateLabel, money, whatsapp } from './utils'
+import { meetingTime } from './meetingCapture'
 
 export function meetingWhatsapp(m: Meeting, data: Data) {
   const company = data.companies.find((c) => c.id === m.company_id)
@@ -14,7 +15,7 @@ export function meetingWhatsapp(m: Meeting, data: Data) {
     url: /^\d{7,15}$/.test(p.phone.replace(/\D/g, ''))
       ? whatsapp(
           p.phone,
-          `Hola, ${p.name}. ${m.status === 'cancelled' ? 'Se canceló' : m.status === 'missed' ? 'No se realizó' : m.status === 'completed' ? 'Se realizó' : 'Te recordamos'} la reunión de PULSO: ${m.title}. ${dateLabel(m.starts_at, 'd MMMM yyyy')}, de ${dateLabel(m.starts_at, 'HH:mm')} a ${dateLabel(m.ends_at, 'HH:mm')} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).${m.location ? ` Lugar o enlace: ${m.location}` : ''}`,
+          `Hola, ${p.name}. ${m.status === 'cancelled' ? 'Se canceló' : m.status === 'missed' ? 'No se realizó' : m.status === 'completed' ? 'Se realizó' : 'Te recordamos'} la reunión de PULSO: ${m.title}. ${dateLabel(m.starts_at, 'd MMMM yyyy')}, ${meetingTime(m, (d) => dateLabel(d, 'HH:mm'))} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).${m.location ? ` Lugar o enlace: ${m.location}` : ''}`,
         )
       : null,
   }))
