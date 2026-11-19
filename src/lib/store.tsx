@@ -10,7 +10,15 @@ import {
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import { disablePush, supportsPush } from './push'
-import { emptyData, type Data, type Table, type Profile } from './types'
+import { type Data, type Table, type Profile } from './types'
+import {
+  ALL_TABLES,
+  createTableLoader,
+  initialTableSnapshot,
+  tableErrors,
+  updateAndRefresh,
+  type TableStates,
+} from './tableStore'
 import { messageOf } from './utils'
 
 type Store = {
@@ -19,13 +27,13 @@ type Store = {
   data: Data
   loading: boolean
   error: string
+  tableStates: TableStates
   refresh: (tables?: Table[]) => Promise<void>
   insert: (table: Table, values: Record<string, unknown>) => Promise<any>
   update: (table: Table, id: string, values: Record<string, unknown>) => Promise<void>
   toast: (s: string) => void
   signOut: () => Promise<void>
 }
-const ALL_TABLES = Object.keys(emptyData) as Table[]
 const PAGE_SIZE = 1000
 // Una tabla completa, paginada. Las filas se devuelven en el mismo orden que antes.
 async function loadTable(table: Table): Promise<unknown[]> {
@@ -44,22 +52,20 @@ const Context = createContext<Store>(null!)
 export const useStore = () => useContext(Context)
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null),
-    [data, setData] = useState<Data>(emptyData),
+    [snapshot, setSnapshot] = useState(initialTableSnapshot),
     [loading, setLoading] = useState(true),
-    [error, setError] = useState(''),
     [notice, setNotice] = useState('')
+  const [loader] = useState(() => createTableLoader(loadTable, setSnapshot))
+  const { data, tables: tableStates } = snapshot
+  const error = tableErrors(tableStates)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined),
-    generation = useRef<Record<string, number>>({}),
+    authGeneration = useRef(0),
     lastFull = useRef(0)
-  // Invalida las cargas en curso para que una respuesta vieja no pise datos más nuevos.
-  const bump = useCallback(
-    (tables: Table[]) =>
-      tables.map((table) => ({
-        table,
-        id: (generation.current[table] = (generation.current[table] || 0) + 1),
-      })),
-    [],
-  )
+  const reset = useCallback(() => {
+    authGeneration.current++
+    loader.reset()
+    setLoading(false)
+  }, [loader])
   const toast = useCallback((s: string) => {
     setNotice(s)
     clearTimeout(timer.current)
@@ -68,41 +74,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(
     async (tables: Table[] = ALL_TABLES) => {
       const full = tables.length === ALL_TABLES.length
+      const generation = authGeneration.current
       const {
-        data: { session: s },
+        data: { session: currentSession },
       } = await supabase.auth.getSession()
-      if (!s) {
-        bump(ALL_TABLES)
-        setData(emptyData)
-        setLoading(false)
+      if (generation !== authGeneration.current) return
+      if (!currentSession) {
+        reset()
         return
       }
-      const requests = bump(tables)
       if (full) lastFull.current = Date.now()
-      const isLatest = ({ table, id }: { table: Table; id: number }) =>
-        generation.current[table] === id
-      try {
-        const results = await Promise.all(
-          requests.map(async (request) => ({ ...request, rows: await loadTable(request.table) })),
-        )
-        const fresh = results.filter(isLatest)
-        if (fresh.length) {
-          setData(
-            (prev) =>
-              ({
-                ...prev,
-                ...Object.fromEntries(fresh.map(({ table, rows }) => [table, rows])),
-              }) as Data,
-          )
-          setError('')
-        }
-      } catch (e) {
-        if (requests.some(isLatest)) setError(messageOf(e))
-      } finally {
-        if (full && requests.some(isLatest)) setLoading(false)
-      }
+      await loader.refresh(tables)
+      if (full && generation === authGeneration.current) setLoading(false)
     },
-    [bump],
+    [loader, reset],
   )
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -114,16 +99,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange((_, s) => {
       setSession(s)
       if (!s) {
-        bump(ALL_TABLES)
-        setData(emptyData)
-        setLoading(false)
+        reset()
       } else setTimeout(() => void refresh(), 0)
     })
     return () => {
       subscription.unsubscribe()
       clearTimeout(timer.current)
     }
-  }, [refresh, bump])
+  }, [refresh, reset])
   useEffect(() => {
     if (!session) return
     let debounce: ReturnType<typeof setTimeout>
@@ -167,14 +150,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return row
   }
   const update = async (table: Table, id: string, values: Record<string, unknown>) => {
-    const { data: rows, error: e } = await supabase
-      .from(table)
-      .update(values)
-      .eq('id', id)
-      .select('id')
-    if (e) throw e
-    if (!rows?.length) throw new Error('No tenés permiso para modificar este registro.')
-    await refresh([table])
+    await updateAndRefresh(
+      table,
+      async () => {
+        const { data: rows, error: e } = await supabase
+          .from(table)
+          .update(values)
+          .eq('id', id)
+          .select('id')
+        if (e) throw e
+        if (!rows?.length) throw new Error('No tenés permiso para modificar este registro.')
+      },
+      refresh,
+    )
   }
   const signOut = async () => {
     if (supportsPush()) {
@@ -199,6 +187,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         data,
         loading,
         error,
+        tableStates,
         refresh,
         insert,
         update,
