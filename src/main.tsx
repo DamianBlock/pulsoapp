@@ -1,13 +1,16 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import { initDisplayScale } from './components/DisplayScale'
 import './styles.css'
 import './dark.css'
 import './brand.css'
 import './agenda.css'
 import './display.css'
+import './refinements.css'
 import '@fontsource-variable/dm-sans'
 import '@fontsource-variable/manrope'
+initDisplayScale()
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: boolean }> {
   state = { error: false }
   static getDerivedStateFromError() {
